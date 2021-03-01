@@ -35,7 +35,7 @@
 
 
 
-= RISC-V Core-Local Interrupt Controller (CLIC) Version 0.9-draft-20210202
+= RISC-V Core-Local Interrupt Controller (CLIC) Version 0.9-draft-20210217
 
 == Background and Motivation
 
@@ -71,7 +71,7 @@ enabled interrupt from a higher-privilege mode will stop execution at
 the current privilege mode, and enter the handler at the higher
 privilege mode.  Each privilege mode has its own interrupt state
 registers (`mepc`/`mcause` for M-mode, `sepc`/`scause` for S-mode,
-`uepc`/`ucause` for U-mode with N extension) to support preemption, or
+`uepc`/`ucause` for U-mode) to support preemption, or
 generically {epc} for privilege mode ``*_x_*``.  Preemption by a
 higher-privilege-mode interrupt also pushes current privilege mode and
 interrupt enable status onto the ``**__x__**pp`` and ``**__x__**pie``
@@ -466,8 +466,10 @@ triggers supported in this implementation. Valid values are 0 to 32.
 
 Each interrupt input has a dedicated interrupt pending bit (`clicintip[__i__]`)
 and occupies one byte in the memory map for ease of access. The actual pending
-bit is located at bit 0 (i.e., the least-significant bit).
-
+bit is located at bit 0 (i.e., the least-significant bit).   
+In case future extensions expand the bit field, from FW perspective 
+clicintip[__i__]=zero means no interrupt pending, and 
+clicintip[__i__]!=0 (not just 1) indicates an interrupt is pending.
 
 `clicintip[__i__]` is a read-write register. Software-based (direct) writes
 to these pending bits have priority over hardware-based writes (triggers).
@@ -609,9 +611,6 @@ The 4096 CLIC interrupt vectors are given unique identification numbers
 with {cause} Exception Code (`exccode`) values.  To maintain backward
 compatibility, the original basic mode interrupts retain their original
 cause values, while the new interrupts are numbered starting at 16.
-
-To support Non-Maskable Interrupt (NMI), the exccode for NMI is defined
-as 0xFFF with mcause.Interrupt=0.
 
 NOTE: When upgrading an earlier original basic interrupt controller
 that had local interrupts attached directly to bits 16 and above, these
@@ -873,6 +872,11 @@ function pointers.
 
 NOTE: The hardware vectoring bit {inhv} is provided to allow resumable
 traps on fetches to the trap vector table.
+
+The inhv bits are only written by hardware during the table vector read 
+operation. The inhv bits can be written by software, including when 
+hardware vectoring is not in effect. The inhv bit has no effect except 
+when returning from a trap using an {ret} instruction.
 
 Implementations might support only one of original basic or CLIC mode.
 If only basic mode is supported, writes to bit 1 are ignored and it is
@@ -2181,8 +2185,12 @@ condition is true when the interrupter and interruptee are not both
 application tasks or not both interrupt handlers.
 
 
-== CLIC Interrupt IDs
+== CLIC Interrupt ID ordering recommendations
 
+There are a few CLIC interrupt ID ordering recommendations
+as part of a profile and are not mandatory in all incarnations of the CLIC.
+
+Original recommendation: 
 The original basic mode interrupts retain their interrupt ID in CLIC mode.
 The `clicintctl` settings are now used to delegate these interrupts as
 required.
@@ -2223,3 +2231,24 @@ ID  Interrupt   Note
 16+ inputs      CLIC external inputs
 ----
 
+M-mode only or M/U mode interrupt map recommendation:
+(in M-only or M/U system without N extension)
+0: M-mode software interrupt
+1: M-mode timer interrupt
+2+: external (including legacy)
+
+M-mode interrupt map in M/S/U system without N extension recommendation:
+0: S-mode software interrupt
+1: S-mode timer interrupt
+2: M-mode software interrupt
+3: M-mode timer interrupt
+4+: external (including legacy)
+
+Interrupt map with PLIC recommendation:
+0: S-mode software interrupt
+1: S-mode timer interrupt
+2: S-mode external (PLIC) interrupt
+3: M-mode software interrupt
+4: M-mode timer interrupt
+5: M-mode external (PLIC) interrupt
+6: external
